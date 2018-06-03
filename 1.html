@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title></title>
+    <style>
+        body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+        }
+
+        #renderCanvas {
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+        #progress{
+            position: absolute;
+            display: none;
+            width: 80%;
+            bottom: 1%;
+            left: 10%;
+            right: 10%;
+            z-index: 100;
+        }
+        #ready{
+            position: absolute;
+            z-index: 100;
+            font-size: 50px;
+            align-self: center;
+       /*     margin: 0;
+            padding: 0;*/
+       /*     left: 46%;
+            top: 46%;*/
+        }
+        #hint{
+            z-index: 100;
+            display: none;
+            position: absolute;
+            align-self: center;
+            background:rgba(34,34,34,0.65);
+            padding:15px;
+            color:white;
+            font-size: 25px;
+        }
+    </style>
+</head>
+<body>
+<canvas id="renderCanvas"></canvas>
+<button id="ready" >ready</button>
+<div id="hint">please waiting</div>
+<progress id="progress" value="0" max="1">
+
+</body>
+<script type="text/javascript" src="static/js/babylon.custom.js"></script>
+<script type="text/javascript">
+    let canvas,
+        engine,
+        camera,
+        scene;
+
+    function initEngine(){
+        canvas = document.getElementById("renderCanvas");
+        engine = new BABYLON.Engine(canvas, true);
+    }
+
+    function showAxis(size) {
+        var makeTextPlane = function(text, color, size) {
+            var dynamicTexture = new BABYLON.DynamicTexture("DynamicTexture", 50, scene, true);
+            dynamicTexture.hasAlpha = true;
+            dynamicTexture.drawText(text, 5, 40, "bold 36px Arial", color , "transparent", true);
+            var plane = new BABYLON.Mesh.CreatePlane("TextPlane", size, scene, true);
+            plane.material = new BABYLON.StandardMaterial("TextPlaneMaterial", scene);
+            plane.material.backFaceCulling = false;
+            plane.material.specularColor = new BABYLON.Color3(0, 0, 0);
+            plane.material.diffuseTexture = dynamicTexture;
+            return plane;
+         };
+      
+        var axisX = BABYLON.Mesh.CreateLines("axisX", [ 
+          new BABYLON.Vector3.Zero(), new BABYLON.Vector3(size, 0, 0), new BABYLON.Vector3(size * 0.95, 0.05 * size, 0), 
+          new BABYLON.Vector3(size, 0, 0), new BABYLON.Vector3(size * 0.95, -0.05 * size, 0)
+          ], scene);
+        axisX.color = new BABYLON.Color3(1, 0, 0);
+        var xChar = makeTextPlane("X", "red", size / 10);
+        xChar.position = new BABYLON.Vector3(0.9 * size, -0.05 * size, 0);
+        var axisY = BABYLON.Mesh.CreateLines("axisY", [
+            new BABYLON.Vector3.Zero(), new BABYLON.Vector3(0, size, 0), new BABYLON.Vector3( -0.05 * size, size * 0.95, 0), 
+            new BABYLON.Vector3(0, size, 0), new BABYLON.Vector3( 0.05 * size, size * 0.95, 0)
+            ], scene);
+        axisY.color = new BABYLON.Color3(0, 1, 0);
+        var yChar = makeTextPlane("Y", "green", size / 10);
+        yChar.position = new BABYLON.Vector3(0, 0.9 * size, -0.05 * size);
+        var axisZ = BABYLON.Mesh.CreateLines("axisZ", [
+            new BABYLON.Vector3.Zero(), new BABYLON.Vector3(0, 0, size), new BABYLON.Vector3( 0 , -0.05 * size, size * 0.95),
+            new BABYLON.Vector3(0, 0, size), new BABYLON.Vector3( 0, 0.05 * size, size * 0.95)
+            ], scene);
+        axisZ.color = new BABYLON.Color3(0, 0, 1);
+        var zChar = makeTextPlane("Z", "blue", size / 10);
+        zChar.position = new BABYLON.Vector3(0, 0.05 * size, 0.9 * size);
+    };
+
+    const UtilMethods = {
+        radians(angle){
+            return Math.PI / 180 * angle;
+        },
+        setMag(vector3, length){
+            let ratio = length / vector3.length();
+            return vector3.multiplyByFloats(ratio, ratio, ratio);
+        },
+        getRandomArbitrary(min, max) {
+          return Math.random() * (max - min) + min;
+        },
+        getRandomInteger(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        },
+        isInSameRange(forCheck, value, adjust){
+            // |forCheck - value| <= adjust
+            return Math.abs(forCheck-value) <= adjust;
+        },
+        selectFromArray(arr) {
+            return arr[Math.floor(Math.random() * arr.length)]
+        }
+    };
+
+    class MeshWrapper{
+        constructor(mesh=null){
+            this.mesh = mesh;
+        }
+        setMaterial(material){
+            this.mesh.material = material;
+        }
+        dispose(){
+            this.mesh.dispose();
+        }
+    }
+
+    class Fruit extends MeshWrapper{
+        constructor(diameter, segments, position, scene){
+            super();
+            this.mesh = BABYLON.MeshBuilder.CreateSphere(
+                "",
+                {
+                    diameter:diameter,
+                    segments:segments
+                },
+                scene
+            )
+            this.isEatten = false;
+            this.diameter = diameter;
+            this.mesh.position = position;
+        }
+        eat(){
+            this.isEatten = true;
+            this.dispose();
+        }
+        apply(snake){
+
+        }
+    }
+
+    class Ticker{
+        constructor(duration){
+            this.duration = duration;
+            this.accumulate = 0;
+        }
+        update(span){
+            this.accumulate += span;
+        }
+        finish(){
+            return this.accumulate > this.duration;
+        }
+        apply(){
+            
+        }
+        clean(gameLogicController){
+
+        }
+    }
+
+    class FruitDisposeTicker extends Ticker{
+        constructor(duration, target){
+            super(duration);
+            this.target = target;
+        }
+        apply(){
+            // let event = new Event("duration", {
+            //     targetType:"fruit",
+            //     value: this.accumulate / this.duration
+            // });
+            // document.dispatchEvent(event);
+        }
+        clean(gameLogicController){
+            if(!this.target.isEatten){
+                let current = gameLogicController.map.fruitList;
+                let prev = null;
+                while(current != null){
+                    if(current.fruit == this.target){
+                        current.fruit.dispose();
+                        if(prev){
+                            prev.next = current.next;
+                        }else{
+                            gameLogicController.map.fruitList = current.next;
+                        }
+                        return;
+                    }
+                    prev = current;
+                    current = current.next;
+                }
+            }
+        }
+    }
+
+    class SpeedBuffTicker extends Ticker{
+        constructor(duration, target){
+            super(duration);
+            this.target = target;
+        }
+        apply(){
+            let event = new CustomEvent("onspeedbuff", {
+                detail: {
+                    value : this.accumulate / this.duration
+                }
+            });
+            document.dispatchEvent(event);
+        }
+        clean(gameLogicController){
+            let snakeBuffs = gameLogicController.snake.buffs;
+            snakeBuffs.splice(snakeBuffs.indexOf(this.target), 1);
+            let event = new Event("endspeedbuff");
+            document.dispatchEvent(event);
+        }
+    }
+
+    class BasicFruit extends Fruit{
+        constructor(diameter, segments, position, scene){
+            super(diameter, segments, position, scene);
+        }
+        eat(){
+            super.eat();
+            ws.send("basic");
+        }
+        apply(snake){
+            snake.appendTail(1);
+        }
+    }
+
+    // The only "buff", use implicit interface
+
+    class Buff{
+        constructor(){
+
+        }
+        apply(attribute, value){
+            return value;
+        }
+    }
+
+    class SpeedBuff extends Buff{
+        constructor(ratio){
+            super();
+            this.ratio = ratio;
+        }
+        apply(attribute, value){
+            if(attribute !== "speed"){
+                return value;
+            }else{
+                return value * this.ratio;
+            }
+        }
+    }
+
+    class SpeedFruit extends Fruit{
+        constructor(diameter, segments, position, tickerController, scene){
+            super(diameter, segments, position, scene);
+            let duration = UtilMethods.getRandomArbitrary(4, 5) * 10000;
+            tickerController.appendTicker(new FruitDisposeTicker(duration, this));
+        }
+        eat(){
+            super.eat();
+            ws.send("speed");
+        }
+        apply(snake){
+            let ratio = UtilMethods.getRandomArbitrary(1.5, 2.0);
+            let buff = new SpeedBuff(ratio);
+            snake.appendBuff(buff);
+            let duration = UtilMethods.getRandomArbitrary(2, 3) * 1000;
+            tickerController.appendTicker(new SpeedBuffTicker(duration, buff));
+        }
+    }
+
+    class BiggerFruit extends Fruit{
+        constructor(diameter, segments, position, tickerController, scene){
+            super(diameter, segments, position, scene);
+            let duration = UtilMethods.getRandomArbitrary(4, 5) * 1000;
+            tickerController.appendTicker(new FruitDisposeTicker(duration, this));
+        }
+        eat(){
+            super.eat();
+            ws.send("bigger");
+        }
+        apply(snake){
+            snake.appendTail(UtilMethods.getRandomInteger(2, 4));
+        }
+    }
+
+    class FruitNode{
+        constructor(fruit, next=null){
+            this.fruit = fruit;
+            this.next = next;
+        }
+    }
+
+    class Ground extends MeshWrapper{
+        constructor(width, height, sink, center, scene){
+            super();
+            this.width = width;
+            this.height = height;
+            this.sink = sink;
+            this.mesh = BABYLON.MeshBuilder.CreateGround(
+                "ground",
+                {
+                    width:width,
+                    height:height
+                },
+                scene
+            );
+            this.mesh.position = center;
+            this.mesh.position.y += sink;
+        }
+    }
+
+    class BarrierBox extends MeshWrapper{
+        constructor(width, height, depth, position, scene){
+            super();
+            this.mesh = BABYLON.MeshBuilder.CreateBox(
+                "",
+                {
+                    width:width,
+                    height:height,
+                    depth:depth
+                },
+                scene
+            );
+            this.mesh.position = position;
+        }
+    } 
+
+    class Segment extends MeshWrapper{
+        constructor(args){
+            super();
+            switch(arguments.length){
+                case 4:
+                    // the case that construct from a existed segment
+                    this.createFromSegment(...arguments);break;
+                case 5:
+                    this.createFromPosition(...arguments);break;
+            }
+        }
+        createFromSegment(segment, length, radian, scene){
+            segment.child = this;
+            this.length = length;
+            this.halfLength = length / 2;
+            this.radian = radian;
+            this._localVectorA = new BABYLON.Vector3(0, 0, -this.halfLength);
+            this._localVectorB = new BABYLON.Vector3(0, 0, this.halfLength);
+            this.vectorA = null;
+            this.vectorB = null;
+            this.mesh = BABYLON.MeshBuilder.CreateBox(
+                "",
+                {
+                    size:this.length
+                    // depth:this.length,
+                    // height:this.halfLength,
+                    // width:this.halfLength 
+                },
+                scene
+            );
+            this.mesh.position = this._calculateNewCenterFromParentSegment(segment);
+            this.mesh.rotation.y = this.radian;
+            this._calculateVectors();
+        }
+        createFromPosition(centerX, centerZ, length, radian, scene){
+            this.child = null;
+            this.length = length;
+            this.halfLength = length / 2;
+            this.radian = radian;
+            this._localVectorA = new BABYLON.Vector3(0, 0, -this.halfLength);
+            this._localVectorB = new BABYLON.Vector3(0, 0, this.halfLength);
+            this.vectorA = null;
+            this.vectorB = null;
+            this.mesh = BABYLON.MeshBuilder.CreateBox(
+                "",
+                {
+                    // depth:this.length,
+                    // height:this.halfLength,
+                    // width:this.halfLength
+                    size:this.length 
+                },
+                scene
+            );
+            this.mesh.position.set(centerX, 0, centerZ);
+            this.mesh.rotation.y = this.radian;
+            this._calculateVectors();
+        }
+        _calculateNewCenterFromParentSegment(segment){
+            let vectorA = segment.vectorA;
+            let dx = this.halfLength * Math.sin(this.radian),
+                dz = this.halfLength * Math.cos(this.radian);
+            return new BABYLON.Vector3(vectorA.x - dx, 0, vectorA.z - dz);
+        }
+        update(){
+            this._calculateVectors();
+        }
+        follow(segment){
+            let target = segment.vectorA.clone();
+            let dir = target.subtract(this.vectorA);
+            this.radian = Math.atan2(dir.x, dir.z);
+            this.mesh.rotation.y = this.radian;
+
+            dir = UtilMethods.setMag(dir, this.halfLength);
+            this.mesh.position = target.subtract(dir);
+        }
+        _calculateVectors(){
+            this.mesh.computeWorldMatrix();
+            let matrix = this.mesh.getWorldMatrix(true);
+            this.vectorA = BABYLON.Vector3.TransformCoordinates(this._localVectorA, matrix);
+            this.vectorB = BABYLON.Vector3.TransformCoordinates(this._localVectorB, matrix);
+        }
+    }
+
+    class SnakeHead extends Segment{
+        constructor(centerX, centerZ, length, radian, scene){
+            super(centerX, centerZ, length, radian, scene);
+            this.forCheckCollisionPoint = null;
+            this._calculateForCheckCollisionPoint();
+        }
+        _calculateForCheckCollisionPoint(){
+            let direction = this.mesh.getDirection(BABYLON.Vector3.Forward());
+            direction = UtilMethods.setMag(direction, this.length / 6);
+            this.forCheckCollisionPoint = this.vectorB.subtract(direction);
+        }
+        update(){
+            super.update();
+            this._calculateForCheckCollisionPoint();
+        }
+        move(direction, distance){
+            this.mesh.translate(direction, distance);
+        }
+        moveForward(distance){
+            this.move(BABYLON.Vector3.Forward(), distance);
+        }
+        addRotation(radian){
+            this.mesh.rotation.y += radian;
+        }
+        isInterSect(meshWrapper){
+            return meshWrapper.mesh.intersectsPoint(this.forCheckCollisionPoint);
+        }
+        isInBorder(map){
+            let x = this.forCheckCollisionPoint.x;
+            let z = this.forCheckCollisionPoint.z;
+            return map.borderArea.leftX <= x && x <= map.borderArea.rightX && map.borderArea.bottomZ <= z && z <= map.borderArea.topZ;
+        }
+        eat(fruit){
+            let positionX = fruit.mesh.position.x;
+            let positionZ = fruit.mesh.position.z;
+            let threshold = fruit.diameter * (3 / 4);
+            return UtilMethods.isInSameRange(positionX, this.vectorB.x, threshold) && UtilMethods.isInSameRange(positionZ, this.vectorB.z, threshold);
+            // return positionX - radius <= this.forCheckCollisionPoint.x && this.forCheckCollisionPoint.x <= pos
+        }
+    }
+
+    class Snake{
+        constructor(segmentNumber, headLength, headMaterial,  segmentLength, segmentMaterial, speed, scene){
+            if(segmentNumber < 0){
+                throw Error("invalid snake segment number");
+            }
+            this.head = new SnakeHead(0, 0, headLength, 0, scene);
+            this.head.setMaterial(headMaterial);
+
+            this.headLength = headLength;
+            this.segmentLength = segmentLength;
+            this.segmentMaterial = segmentMaterial;
+
+            this.state = {
+                segmentNumber:segmentNumber,
+                speed:speed
+            };
+
+            this.buffs = [];
+
+            let prev = this.head;
+            for(let i = 0;i < segmentNumber;i++){
+                let current = new Segment(prev, segmentLength, 0, scene);
+                current.setMaterial(segmentMaterial);
+                current.follow(prev);
+                current.update();
+                prev = current;
+            }
+            this.tail = prev;
+        }
+        _getStateAttributeValue(attribute){
+            let value = this.state[attribute];
+            for(let buff of this.buffs){
+                value = buff.apply(attribute, value);
+            }
+            return value;
+        }
+        appendBuff(buff){
+            this.buffs.push(buff);
+        }
+        move(direction, distance){
+            this.head.move(direction, distance);
+            this.head.update();
+            this._updateBodys();
+        }
+        moveForward(){
+            this.move(BABYLON.Vector3.Forward(), this._getStateAttributeValue("speed"));
+        }
+        _updateBodys(){
+            let current = this.head;
+            while(current.child != null){
+                current.child.follow(current);
+                current = current.child;
+                current.update();
+            }
+        }
+        appendTail(nums){
+            this.state.segmentNumber += nums;
+            let counter = 0;
+            let prev = this.tail;
+            while(counter < nums){
+                let current = new Segment(prev, this.segmentLength, 0, scene);
+                current.setMaterial(this.segmentMaterial);
+                prev = current;
+                ++counter;
+            }
+            this.tail = prev;
+        }
+        addRotation(radian){
+            this.head.addRotation(radian);
+            this.head.update();
+            this._updateBodys();
+        }
+        isInterSectSelf(){
+            let current = this.head.child;
+            while(current != null){
+                if(this.head.isInterSect(current)){
+                    return true;
+                }
+                current = current.child;
+            }
+            return false;
+        }
+        isInBorder(map){
+            return this.head.isInBorder(map);
+        }
+        eat(fruit){
+            return this.head.eat(fruit);
+        }
+        getHeadPosition(){
+            return this.head.forCheckCollisionPoint;
+        }
+    }
+
+    class GameMap{
+        constructor(borderLeftX, borderRightX, borderBottomZ, borderTopZ, borderBoxSize){
+            this.borderArea = {
+                leftX:borderLeftX,
+                rightX:borderRightX,
+                bottomZ:borderBottomZ,
+                topZ:borderTopZ
+            };
+            let shrink = borderBoxSize / 2;
+            this.generateArea = {
+                leftX:borderLeftX + shrink,
+                rightX:borderRightX - shrink,
+                bottomZ:borderBottomZ + shrink,
+                topZ:borderTopZ - shrink
+            };
+            this.speicialBarrier = [];
+            this.fruitList = null;
+        }
+        appendSpecialBarrier(barrier){
+            this.speicialBarrier.push(barrier);
+        }
+        appendFruit(fruit){
+            let node = new FruitNode(fruit, this.fruitList);
+            this.fruitList = node;
+        }
+    }
+
+    let Factory = {
+        createSnake(args, scene){
+            let segmentNumber = args.segmentNumber || 1,
+                headLength = args.headLength || 2,
+                headMaterial = args.headMaterial,
+                segmentLength = args.segmentLength || 2,
+                segmentMaterial = args.segmentMaterial,
+                speed = args.speed || 0.1;
+            return new Snake(segmentNumber, headLength, headMaterial, segmentLength, segmentMaterial, speed, scene);
+        },
+        createFollowCamera(name, position, args, scene){
+            let camera = new BABYLON.FollowCamera(name, position, scene);
+            for(let prop in args){
+                camera[prop] = args[prop];
+            }
+            return camera;
+        },
+        createStandardMaterial(name, args, scene){
+            let material = new BABYLON.StandardMaterial(name, scene);
+            for(let prop in args){
+                material[prop] = args[prop];
+            }
+            return material;
+        },
+        createMultiMaterial(name, materials, scene){
+            let multimat = new BABYLON.StandardMaterial(name, scene);
+            for(let mat of materials){
+                multimat.subMaterials.push(mat);
+            }
+            return multimat;
+        }
+    };
+
+    Factory.SceneBuilder = {
+        buildBorder(horizontalNumber, verticalNumber, size, center, material, scene){
+            // let horizontalNumber = args.horizontalNumber || 30,
+            //     verticalNumber = args.verticalNumber || 30,
+            //     size = args.size,
+            //     center = args.center || BABYLON.Vector3.Zero(),
+            //     material = args.material;
+            let centerX = center.x,
+                centerZ = center.z;
+
+            // - (horizontalNumber * size / 2) + (size / 2);
+            let startX = (1 - horizontalNumber) * (size / 2) + centerX;
+            let zBottom = (1 - verticalNumber) * (size / 2) + centerZ;
+
+            let startZ = zBottom + size;
+            let xLeft = startX;
+
+            for(let i = 0, currentX = startX, zTop = 2*centerZ-zBottom; i < horizontalNumber; i++){
+                let boxBottom = new BarrierBox(size, size, size, new BABYLON.Vector3(currentX, 0, zBottom), scene);
+                boxBottom.setMaterial(material);
+                let boxTop = new BarrierBox(size, size, size, new BABYLON.Vector3(currentX, 0, zTop), scene);
+                boxTop.setMaterial(material);
+                currentX += size;
+            }
+
+            let realVerticalNumber = verticalNumber - 2;
+            for(let i = 0, currentZ = startZ, xRight = 2*centerX-xLeft; i < realVerticalNumber; i++){
+                let boxLeft = new BarrierBox(size, size, size, new BABYLON.Vector3(xLeft, 0, currentZ), scene);
+                boxLeft.setMaterial(material);
+                let boxRight = new BarrierBox(size, size, size, new BABYLON.Vector3(xRight, 0, currentZ), scene);
+                boxRight.setMaterial(material);
+                currentZ += size;
+            }
+        },
+        buildGround(width, height, sink, position, material, scene){
+            let ground = new Ground(width, height, sink, position, scene);
+            ground.setMaterial(material);
+            return ground;
+        },
+        buildGameMap(args, scene){
+            let horizontalBoxNumber = args.horizontalBoxNumber || 30,
+                verticalBoxNumber = args.verticalBoxNumber || 30,
+                borderBoxSize = args.borderBoxSize || 1,
+                center = args.center || BABYLON.Vector3.Zero(),
+                borderBoxMaterial = args.borderBoxMaterial,
+                groundMaterial = args.groundMaterial,
+                groundSink = args.groundSink || -0.5;
+
+            let width = horizontalBoxNumber * borderBoxSize,
+                height = verticalBoxNumber * borderBoxSize;
+
+            let innerWidth = width - 2 * borderBoxSize,
+                innerHeight = height - 2 * borderBoxSize;
+        
+            let innerLeftX = center.x - innerWidth / 2,
+                innerRightX = center.x + innerWidth / 2,
+                innerBottomZ = center.z - innerHeight / 2,
+                innerTopZ = center.z + innerHeight / 2;
+
+            // console.log(leftX, rightX, bottomZ, topZ);
+
+            Factory.SceneBuilder.buildBorder(horizontalBoxNumber, verticalBoxNumber, borderBoxSize, center.clone(), borderBoxMaterial, scene);
+            Factory.SceneBuilder.buildGround(width, height, groundSink, center.clone(), groundMaterial, scene);
+            return new GameMap(innerLeftX, innerRightX, innerBottomZ, innerTopZ, borderBoxSize);
+        },
+        generateRandomPosition(map, snake, forbiddenRange){
+            let snakeHeadPosition = snake.getHeadPosition();
+            let snakeX = snakeHeadPosition.x,
+                snakeZ = snakeHeadPosition.z;
+            let xPos = 0,
+                zPos = 0;
+            do{
+                xPos = UtilMethods.getRandomArbitrary(map.generateArea.leftX, map.generateArea.rightX);
+                zPos = UtilMethods.getRandomArbitrary(map.generateArea.bottomZ, map.generateArea.topZ);
+            }while(UtilMethods.isInSameRange(xPos, snakeX, forbiddenRange) && UtilMethods.isInSameRange(zPos, snakeZ, forbiddenRange));
+            return new BABYLON.Vector3(xPos, 0, zPos);
+        },
+        // arg "type" must be needed
+        createFruit(type, args, scene){
+            let fruit = null;
+            let diameter = args.diameter || 1,
+                segments = args.segments || 16;
+                position = args.position || BABYLON.Vector3.Zero(),
+                material = args.material,
+                tickerController = args.tickerController;
+            
+            switch(type){
+                case "Basic":
+                    fruit = new BasicFruit(diameter, segments, position, scene);
+                    break;
+                case "Bigger":
+                    fruit = new BiggerFruit(diameter, segments, position, tickerController, scene);
+                    break;
+                case "Speed":
+                    fruit = new SpeedFruit(diameter, segments, position, tickerController, scene);
+                    break;
+                default:
+                    throw Error("no such type of fruit");
+            }
+            fruit.setMaterial(material);
+            return fruit;
+        }
+    }
+
+    class TickerController{
+        constructor(gameLogicController){
+            this.tickers = [];
+            this.lastTimeTick = Date.now();
+            this.gameLogicController = gameLogicController;
+        }
+        appendTicker(ticker){
+            this.tickers.push(ticker);
+        }
+        updateTickerState(){
+            let currentTimeTick = Date.now();
+            let span = currentTimeTick - this.lastTimeTick;
+            for(let i = 0;i < this.tickers.length; i++){
+                let ticker = this.tickers[i];
+                ticker.update(span);
+                if(ticker.finish()){
+                    // delete this ticker
+                    ticker.clean(this.gameLogicController);
+                    this.tickers.splice(i, 1);
+                }else{
+                    ticker.apply();
+                }
+            }
+            this.lastTimeTick = Date.now();
+        }
+    }
+
+    class SocketMessageController{
+
+    }
+
+    class ResourcesManager{
+        constructor(scene){
+            this.materials = {};
+            this.scene = scene;
+        }
+        load(type, key, value){
+            this[type][key] = value;
+        }
+        initialize(){
+            this.load("materials", "snakeHead", Factory.createStandardMaterial(
+                "",
+                {
+                    diffuseTexture:new BABYLON.Texture("static/resources/images/fjl.jpg", this.scene)
+                },
+                this.scene
+            ));
+            this.load("materials", "snakeBody", Factory.createStandardMaterial(
+                "",
+                {
+                    diffuseTexture:new BABYLON.Texture("static/resources/images/crap.jpg", this.scene)
+                },
+                this.scene
+            ));
+            this.load("materials", "borderBox", Factory.createStandardMaterial(
+                "",
+                {
+                    diffuseTexture:new BABYLON.Texture("static/resources/images/wall.png", this.scene)
+                },
+                this.scene
+            ));
+            this.load("materials", "ground", Factory.createStandardMaterial(
+                "",
+                {
+                    diffuseTexture:new BABYLON.Texture("static/resources/images/ground.jpg", this.scene)
+                },
+                this.scene
+            ));
+            this.load("materials", "basicFruit", Factory.createStandardMaterial(
+                "",
+                {
+                    diffuseTexture:new BABYLON.Texture("static/resources/images/basic.jpg", this.scene)
+                },
+                this.scene
+            ));
+            this.load("materials", "speedFruit", Factory.createStandardMaterial(
+                "",
+                {
+                    diffuseTexture:new BABYLON.Texture("static/resources/images/speed.jpg", this.scene)
+                },
+                this.scene
+            ));
+            this.load("materials", "biggerFruit", Factory.createStandardMaterial(
+                "",
+                {
+                    diffuseTexture:new BABYLON.Texture("static/resources/images/bigger.png", this.scene)
+                },
+                this.scene
+            ));
+        }
+    }
+
+    class GameLogicController{
+        constructor(map, snake, scene){
+            // finish is the inner
+            this.finish = false;
+            // stop is the outside status
+            this.stop = false;
+            this.win = false;
+            this.tickerController = new TickerController(this);
+            this.map = map;
+            this.snake = snake;
+            this.scene = scene;
+        }
+        checkEat(){
+            let current = this.map.fruitList;
+            let prev = null;
+            while(current != null){
+                if(this.snake.eat(current.fruit)){
+                    current.fruit.eat();
+                    if(current.fruit instanceof BasicFruit){
+                        current.fruit = Factory.SceneBuilder.createFruit(
+                            "Basic",
+                            {
+                                material:resourcesManager.materials["basicFruit"],
+                                position:Factory.SceneBuilder.generateRandomPosition(this.map, this.snake, this.snake.headLength * 2)
+                            }, 
+                            this.scene
+                        );
+                        prev = current;
+                        current = current.next;
+                    }else{
+                        if(prev){
+                            prev.next = current.next;
+                            current = current.next;
+                        }else{
+                            current = current.next;
+                            this.map.fruitList = current;
+                        }
+                    }
+                }else{
+                    prev = current;
+                    current = current.next;
+                }
+            }
+        }
+        checkDeath(){
+            // the case that socket receive message that opponent lose
+            if(!this.finish){
+                let result = this.snake.isInterSectSelf() || !this.snake.isInBorder(this.map);
+                if(result == true){
+                    this.win = false;
+                }
+                this.finish = result;
+            }
+        }
+        checkWinningState(){
+            this.checkDeath();
+            if(this.finish){
+                if(this.win){
+                    document.dispatchEvent(new Event("win"));
+                }else{
+                    document.dispatchEvent(new Event("lose"));
+                    ws.send("lose");
+                }
+                this.stop = true;
+            }
+        }
+        update(){
+            this.checkWinningState();
+            if(!this.finish){
+                // move
+                this.tickerController.updateTickerState();
+                this.generateRandomElement();
+                this.checkEat();
+                this.snake.moveForward();
+            }
+        }
+        // since the event listener system is not controlled by us
+        // and is async, so we must judge the finish state in this method
+        addSpecialInputEventHandler(){
+            window.addEventListener("keydown", (event)=>{
+                if(!this.finish){
+                    switch(event.keyCode){
+                        case 65:
+                            this.snake.addRotation(-0.1);
+                            break;
+                        // d
+                        case 68:
+                            this.snake.addRotation(0.1);
+                            break;
+                    }
+                }
+            });
+            window.addEventListener("deviceorientation", (event)=>{
+                if(!this.finish){
+                    let beta = event.beta;
+                    if(beta < -6){
+                        this.snake.addRotation(-0.03);
+                    }else if(beta > 6){
+                        this.snake.addRotation(0.03);
+                    }
+                }
+            })
+        }
+        initializeGameMap(){
+            this.map.appendFruit(Factory.SceneBuilder.createFruit(
+                "Basic", 
+                {
+                    material:resourcesManager.materials["basicFruit"],
+                    position:Factory.SceneBuilder.generateRandomPosition(this.map, this.snake, this.snake.headLength * 3)
+                }, 
+                this.scene
+            ));
+            this.map.appendFruit(Factory.SceneBuilder.createFruit(
+                "Basic", 
+                {
+                    material:resourcesManager.materials["basicFruit"],
+                    position:Factory.SceneBuilder.generateRandomPosition(this.map, this.snake, this.snake.headLength * 3)
+                }, 
+                this.scene
+            ));
+        }
+        initialize(){
+            // this.loadMaterial()
+            this.initializeGameMap();
+            this.addSpecialInputEventHandler();
+        }
+        generateRandomElement(){
+            let value = Math.random();
+            if(value < 0.004){
+                this.map.appendFruit(Factory.SceneBuilder.createFruit(
+                    "Speed",
+                    {
+                        diameter:2,
+                        material:resourcesManager.materials["speedFruit"],
+                        tickerController:this.tickerController,
+                        position:Factory.SceneBuilder.generateRandomPosition(this.map, this.snake, this.snake.headLength * 2)
+                    },
+                    this.scene
+                ));
+            }
+            value = Math.random();
+            if(value > 0.996){
+                this.map.appendFruit(Factory.SceneBuilder.createFruit(
+                    "Bigger",
+                    {
+                        diameter:2,
+                        material:resourcesManager.materials["biggerFruit"],
+                        tickerController:this.tickerController,
+                        position:Factory.SceneBuilder.generateRandomPosition(this.map, this.snake, this.snake.headLength * 2)
+                    },
+                    this.scene
+                ));
+            }
+        }
+        onMessageTrigger(message){
+            switch(message){
+                case "ready":
+                    startGame();
+                    break;
+                case "lose":
+                    this.finish = true;
+                    this.win = true;
+                    break;
+                case "basic":
+                    BasicFruit.prototype.apply(this.snake);
+                    break;
+                case "speed":
+                    SpeedFruit.prototype.apply(this.snake);
+                    break;
+                case "bigger":
+                    BiggerFruit.prototype.apply(this.snake);
+                    break;
+            }
+        }
+    }
+
+    let ws;
+
+    function initWebSocketHandler(){
+        ws = new WebSocket("ws://" + window.location.host + "/ws");
+        // ws.onopen = function(){
+        // }
+        ws.onmessage = function(msg) {
+            gameLogicController.onMessageTrigger(msg.data);
+        };
+    }
+
+    function initUIHandler(){
+        let progressBar = document.getElementById("progress");
+        document.addEventListener("onspeedbuff", (event)=>{
+            progressBar.style.display = "block";
+            progressBar.value = event.detail.value;
+        });
+        document.addEventListener("endspeedbuff", (event)=>{
+            progressBar.style.display = "none";
+        });
+
+        let hint = document.getElementById("hint");
+        document.addEventListener("start", (event)=>{
+            hint.style.display = "none";
+        });
+        document.addEventListener("lose", (event)=>{
+            hint.style.display = "block";
+            hint.innerHTML = "You lose!"
+        });
+        document.addEventListener("win", (event)=>{
+            hint.style.display = "block";
+            hint.innerHTML = "You win!"
+        });
+
+        let ready = document.getElementById("ready");
+        ready.addEventListener("click", ()=>{
+            ready.style.display = "none";
+            initWebSocketHandler();
+            hint.style.display = "block";
+        })
+    }
+
+    let resourcesManager;
+    let gameLogicController;
+
+    function createScene(){
+        initEngine();
+
+        let scene = new BABYLON.Scene(engine);
+        
+        // camera = new BABYLON.ArcRotateCamera("camera", Math.PI / 2, Math.PI / 2, 4, BABYLON.Vector3.Zero(), scene);
+
+        camera = Factory.createFollowCamera(
+            "FollowCamera",
+            new BABYLON.Vector3(0,3,0),
+            {
+                radius:8,
+                heightOffset:3,
+                rotationOffset:180,
+                cameraAcceleration:0.2,
+                maxCameraSpeed:8
+            }, 
+            scene
+        );
+
+        // This attaches the camera to the canvas
+        camera.attachControl(canvas, true);
+        
+
+        let light1 = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
+
+        // showAxis(20);
+
+        let segMaterial = Factory.createStandardMaterial("segMaterial", {
+            diffuseColor: new BABYLON.Color3(1, 0, 0)
+        }, scene);
+
+        let groundMaterial = Factory.createStandardMaterial("groundMaterial", {
+            diffuseColor: new BABYLON.Color3(0, 0, 0)
+        }, scene)
+
+        resourcesManager = new ResourcesManager(scene);
+        resourcesManager.initialize();
+
+        let snake = Factory.createSnake({
+            segmentNumber:10,
+            headLength:1,
+            headMaterial:resourcesManager.materials["snakeHead"],
+            segmentLength:1,
+            segmentMaterial:resourcesManager.materials["snakeBody"],
+            scene:scene,
+            speed:0.15
+        }, scene);
+
+        let gameMap = Factory.SceneBuilder.buildGameMap({
+            horizontalBoxNumber:60,
+            verticalBoxNumber:40,
+            groundMaterial:resourcesManager.materials["ground"],
+            borderBoxMaterial:resourcesManager.materials["borderBox"]
+        }, scene);
+
+        gameLogicController = new GameLogicController(gameMap, snake, scene);
+        gameLogicController.initialize();
+        camera.lockedTarget = snake.head.mesh; 
+
+        window.addEventListener("resize", function(){
+            engine.resize();
+        });
+
+        return scene;
+    }
+
+    scene = createScene();
+    initUIHandler();
+    
+    function startGame(){
+        document.dispatchEvent(new Event("start"));
+        engine.runRenderLoop(function(){
+            // game logic update
+            if(!gameLogicController.stop){
+                gameLogicController.update();
+                scene.render();
+            }
+        });
+    }
+</script>
+</html>
