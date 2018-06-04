@@ -18,7 +18,7 @@ class ChatHandler(tornado.websocket.WebSocketHandler):
     def __init__(self, application, request, **kwargs):
         super(ChatHandler, self).__init__(application, request, **kwargs)
         self.opponent = None
-        # self.identity = "A"
+        self.is_playing = False
 
     def check_origin(self, origin):
         return True
@@ -30,9 +30,9 @@ class ChatHandler(tornado.websocket.WebSocketHandler):
                 ChatHandler.users.add(self)
                 self.opponent = user
                 user.opponent = self
-                print(self, self.opponent)
                 self.write_message("ready")
                 self.opponent.write_message("ready")
+                self.is_playing = self.opponent.is_playing = True
                 return
 
         ChatHandler.users.add(self)
@@ -47,10 +47,14 @@ class ChatHandler(tornado.websocket.WebSocketHandler):
             self.opponent.write_message(message)
 
     def on_close(self):
-        ChatHandler.users.pop(self)
-        if self.opponent is not None:
+        if self.is_playing:
+            self.opponent.write_message("lose")
             ChatHandler.users.pop(self.opponent)
+        else:
+            if self.opponent is not None:
+                self.opponent.opponent = None
 
+        ChatHandler.users.pop(self)
 
 
 if __name__ == '__main__':
