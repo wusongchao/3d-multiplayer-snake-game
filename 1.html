@@ -278,7 +278,7 @@
     class SpeedFruit extends Fruit{
         constructor(diameter, segments, position, tickerController, scene){
             super(diameter, segments, position, scene);
-            let duration = UtilMethods.getRandomArbitrary(4, 5) * 10000;
+            let duration = UtilMethods.getRandomArbitrary(4, 5) * 1000;
             tickerController.appendTicker(new FruitDisposeTicker(duration, this));
         }
         eat(){
@@ -824,6 +824,30 @@
         }
     }
 
+    const InputConstants = {
+        Keys:{
+            A:65,
+            D:68
+        },
+        Deviceorientation:{
+            NONE:0,
+            LEFT:1,
+            RIGHT:2
+        }
+    }
+
+    let inputState = {
+        deviceorientation:InputConstants.Deviceorientation.NONE,
+        keys:{
+            [InputConstants.Keys.A]:{
+                pressed:false
+            },
+            [InputConstants.Keys.D]:{
+                pressed:false
+            }
+        }
+    }
+
     class GameLogicController{
         constructor(map, snake, scene){
             // finish is the inner
@@ -890,6 +914,22 @@
                 this.stop = true;
             }
         }
+        moveSnake(){
+            if(inputState.keys[InputConstants.Keys.A].pressed){
+                this.snake.addRotation(-0.03);
+            }
+            else if(inputState.keys[InputConstants.Keys.D].pressed){
+                this.snake.addRotation(0.03);
+            }
+
+            if(inputState.deviceorientation == InputConstants.Deviceorientation.LEFT){
+                this.snake.addRotation(-0.03);
+            }else if(inputState.deviceorientation == InputConstants.Deviceorientation.RIGHT){
+                this.snake.addRotation(0.03);
+            }
+
+            this.snake.moveForward();
+        }
         update(){
             this.checkWinningState();
             if(!this.finish){
@@ -897,7 +937,7 @@
                 this.tickerController.updateTickerState();
                 this.generateRandomElement();
                 this.checkEat();
-                this.snake.moveForward();
+                this.moveSnake();
             }
         }
         // since the event listener system is not controlled by us
@@ -906,12 +946,19 @@
             window.addEventListener("keydown", (event)=>{
                 if(!this.finish){
                     switch(event.keyCode){
-                        case 65:
-                            this.snake.addRotation(-0.1);
+                        case InputConstants.Keys.A:
+                        case InputConstants.Keys.D:
+                            inputState.keys[event.keyCode].pressed = true;
                             break;
-                        // d
-                        case 68:
-                            this.snake.addRotation(0.1);
+                    }
+                }
+            });
+            window.addEventListener("keyup", (event)=>{
+                if(!this.finish){
+                    switch(event.keyCode){
+                        case InputConstants.Keys.A:
+                        case InputConstants.Keys.D:
+                            inputState.keys[event.keyCode].pressed = false;
                             break;
                     }
                 }
@@ -920,9 +967,11 @@
                 if(!this.finish){
                     let beta = event.beta;
                     if(beta < -6){
-                        this.snake.addRotation(-0.03);
+                        inputState.deviceorientation = InputConstants.Deviceorientation.LEFT;
                     }else if(beta > 6){
-                        this.snake.addRotation(0.03);
+                        inputState.deviceorientation = InputConstants.Deviceorientation.RIGHT;
+                    }else{
+                        inputState.deviceorientation = InputConstants.Deviceorientation.NONE;
                     }
                 }
             })
