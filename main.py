@@ -48,7 +48,8 @@ class ChatHandler(tornado.websocket.WebSocketHandler):
 
     def on_close(self):
         if self.is_playing:
-            self.opponent.write_message("lose")
+            if self.opponent is not None:
+                self.opponent.write_message("lose")
             ChatHandler.users.remove(self.opponent)
         else:
             if self.opponent is not None:
