@@ -357,12 +357,12 @@
             switch(arguments.length){
                 case 4:
                     // the case that construct from a existed segment
-                    this.createFromSegment(...arguments);break;
+                    this._createFromSegment(...arguments);break;
                 case 5:
-                    this.createFromPosition(...arguments);break;
+                    this._createFromPosition(...arguments);break;
             }
         }
-        createFromSegment(segment, length, radian, scene){
+        _createFromSegment(segment, length, radian, scene){
             segment.child = this;
             this.length = length;
             this.halfLength = length / 2;
@@ -385,7 +385,7 @@
             this.mesh.rotation.y = this.radian;
             this._calculateVectors();
         }
-        createFromPosition(centerX, centerZ, length, radian, scene){
+        _createFromPosition(centerX, centerZ, length, radian, scene){
             this.child = null;
             this.length = length;
             this.halfLength = length / 2;
@@ -506,6 +506,9 @@
         }
         _getStateAttributeValue(attribute){
             let value = this.state[attribute];
+            // return this.buffs.reduce((value, buff)=>{
+            //     return buff.apply(attribute, value)
+            // }, this.state[attribute]);
             for(let buff of this.buffs){
                 value = buff.apply(attribute, value);
             }

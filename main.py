@@ -33,7 +33,6 @@ class ChatHandler(tornado.websocket.WebSocketHandler):
                 self.write_message("ready")
                 self.opponent.write_message("ready")
                 self.is_playing = self.opponent.is_playing = True
-                return
 
         ChatHandler.users.add(self)
 
